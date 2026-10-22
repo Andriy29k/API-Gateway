@@ -1,3 +1,8 @@
+x-service: &service
+  restart: unless-stopped
+  networks:
+    - app-net
+
 services:
   gateway:
     image: nginx:1.28-alpine
@@ -11,46 +16,39 @@ services:
         condition: service_healthy
       service-b:
         condition: service_healthy
+      service-c:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - app-net
     healthcheck:
-      test: ["CMD", "nginx", "-t"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      # Checks that the gateway actually answers, not only that its config parses.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   service-a:
+    <<: *service
     build:
       context: ./services/service-a
-    environment:
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     expose:
       - "8000"
-    restart: unless-stopped
-    networks:
-      - app-net
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
 
   service-b:
+    <<: *service
     build:
       context: ./services/service-b
-    environment:
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     expose:
       - "8000"
-    restart: unless-stopped
-    networks:
-      - app-net
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
+
+  service-c:
+    <<: *service
+    build:
+      context: ./services/service-c
+    expose:
+      - "8000"
 
 networks:
   app-net:
