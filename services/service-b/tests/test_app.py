@@ -56,6 +56,47 @@ def test_echo_does_not_accept_get(client):
     assert client.get("/echo").status_code == 405
 
 
+@pytest.mark.parametrize("method", ["GET", "POST", "PUT", "PATCH", "DELETE"])
+def test_inspect_reports_method(client, method):
+    resp = client.open("/inspect", method=method)
+    assert resp.status_code == 200
+    assert resp.get_json()["method"] == method
+
+
+def test_inspect_reports_body_size(client):
+    resp = client.put("/inspect", data=b"\x00\x01" * 500, content_type="application/octet-stream")
+    assert resp.get_json()["body_bytes"] == 1000
+
+
+def test_inspect_returns_only_allowed_headers(client):
+    resp = client.get(
+        "/inspect",
+        headers={
+            "X-Custom-Header": "hello",
+            "Authorization": "Bearer secret",
+            "Cookie": "session=secret",
+            "X-Other": "not-listed",
+        },
+    )
+    headers = resp.get_json()["headers"]
+    assert headers["X-Custom-Header"] == "hello"
+    assert "Authorization" not in headers
+    assert "Cookie" not in headers
+    assert "X-Other" not in headers
+    assert "secret" not in resp.get_data(as_text=True)
+
+
+def test_inspect_truncates_long_header_values(client):
+    resp = client.get("/inspect", headers={"X-Custom-Header": "x" * 500})
+    assert len(resp.get_json()["headers"]["X-Custom-Header"]) == 200
+
+
+def test_inspect_rejects_oversized_body():
+    client = create_app({"TESTING": True, "MAX_CONTENT_LENGTH": 100}).test_client()
+    resp = client.post("/inspect", data=b"x" * 1000)
+    assert resp.status_code == 413
+
+
 def test_request_id_generated_when_missing(client):
     resp = client.get("/hello")
     assert re.fullmatch(r"[0-9a-f]{32}", resp.headers["X-Request-ID"])
