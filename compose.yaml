@@ -18,6 +18,8 @@ services:
         condition: service_healthy
       service-c:
         condition: service_healthy
+      service-d:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - app-net
@@ -47,6 +49,13 @@ services:
     <<: *service
     build:
       context: ./services/service-c
+    expose:
+      - "8000"
+
+  service-d:
+    <<: *service
+    build:
+      context: ./services/service-d
     expose:
       - "8000"
 
