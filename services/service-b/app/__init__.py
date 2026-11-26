@@ -1,4 +1,4 @@
-"""service-b: demo upstream with GET and POST, used to verify body forwarding."""
+"""service-b: demo upstream used to verify method, header and body forwarding."""
 import json
 import logging
 import os
@@ -16,6 +16,20 @@ SERVICE_NAME = "service-b"
 # Anything else is replaced, so a client cannot inject odd data into logs.
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _MAX_LOGGED_PATH = 200
+
+# Headers that /inspect may return. Only an explicit list, so secrets such as
+# Authorization or Cookie are never reflected back to the client.
+_INSPECT_HEADERS = (
+    "Host",
+    "User-Agent",
+    "Content-Type",
+    "X-Request-ID",
+    "X-Real-IP",
+    "X-Forwarded-For",
+    "X-Forwarded-Proto",
+    "X-Custom-Header",
+)
+_MAX_HEADER_VALUE = 200
 
 
 def _get_logger():
@@ -123,6 +137,24 @@ def create_app(config=None):
                 "service": SERVICE_NAME,
                 "received": payload,
                 "content_length": request.content_length,
+                "request_id": g.request_id,
+            }
+        )
+
+    @app.route("/inspect", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+    def inspect():
+        """Describe the received request, so tests can verify what the gateway forwards."""
+        headers = {
+            name: request.headers[name][:_MAX_HEADER_VALUE]
+            for name in _INSPECT_HEADERS
+            if name in request.headers
+        }
+        return jsonify(
+            {
+                "service": SERVICE_NAME,
+                "method": request.method,
+                "headers": headers,
+                "body_bytes": len(request.get_data()),
                 "request_id": g.request_id,
             }
         )
