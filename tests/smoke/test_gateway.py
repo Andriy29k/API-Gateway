@@ -17,7 +17,7 @@ def test_gateway_health(base_url):
     assert body["service"] == "api-gateway"
 
 
-@pytest.mark.parametrize("service", ["service-a", "service-b", "service-c"])
+@pytest.mark.parametrize("service", ["service-a", "service-b", "service-c", "service-d"])
 def test_service_hello_is_routed(base_url, service):
     resp = get(f"{base_url}/api/{service}/hello")
     assert resp.status_code == 200
