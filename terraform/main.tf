@@ -105,6 +105,12 @@ resource "azurerm_subnet_network_security_group_association" "k3s" {
 
 # --- k3s server ---
 
+# Shared secret for joining nodes. Stored only in the local state (see TERRAFORM.md, 1.2).
+resource "random_password" "k3s_token" {
+  length  = 48
+  special = false
+}
+
 resource "azurerm_public_ip" "server" {
   name                = "pip-k3s-server"
   location            = azurerm_resource_group.main.location
@@ -137,6 +143,13 @@ resource "azurerm_linux_virtual_machine" "server" {
   disable_password_authentication = true
   network_interface_ids           = [azurerm_network_interface.server.id]
   tags                            = var.tags
+
+  custom_data = base64encode(templatefile("${path.module}/cloud-init/k3s-server.yaml.tftpl", {
+    k3s_version   = var.k3s_version
+    k3s_token     = random_password.k3s_token.result
+    public_ip     = azurerm_public_ip.server.ip_address
+    tls_san_fqdns = [for name in var.subdomains : "${name}.${var.domain_name}"]
+  }))
 
   admin_ssh_key {
     username   = var.admin_username
@@ -197,6 +210,12 @@ resource "azurerm_linux_virtual_machine" "worker" {
   disable_password_authentication = true
   network_interface_ids           = [azurerm_network_interface.worker[count.index].id]
   tags                            = var.tags
+
+  custom_data = base64encode(templatefile("${path.module}/cloud-init/k3s-agent.yaml.tftpl", {
+    k3s_version       = var.k3s_version
+    k3s_token         = random_password.k3s_token.result
+    server_private_ip = azurerm_network_interface.server.private_ip_address
+  }))
 
   admin_ssh_key {
     username   = var.admin_username
