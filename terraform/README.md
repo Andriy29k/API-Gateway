@@ -32,6 +32,18 @@ terraform plan
 
 `terraform apply` and `terraform destroy` are run only after explicit approval.
 
+## CI and linting
+
+`.github/workflows/terraform.yml` runs on pull requests and pushes to `terraform`, `dev` and `main` when `terraform/**` changes:
+`fmt -check`, `init -backend=false`, `validate` and `tflint`. It never runs `plan` or `apply` (local state, no Azure credentials in GitHub).
+
+Run tflint locally ([install](https://github.com/terraform-linters/tflint#installation), rules in `.tflint.hcl`):
+
+```bash
+tflint --init
+tflint --format compact
+```
+
 ## State
 
 The state is stored locally in `terraform/terraform.tfstate`. It is git-ignored and contains sensitive values.
