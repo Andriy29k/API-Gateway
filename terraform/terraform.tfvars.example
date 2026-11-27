@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in your own values.
+# terraform.tfvars is git-ignored: never commit it.
+
+# Your public IP with /32. Find it with: curl -s https://ifconfig.me
+admin_source_cidr = "203.0.113.10/32"
+
+# Content of your public key, e.g. the output of: cat ~/.ssh/id_ed25519.pub
+ssh_public_key = "ssh-ed25519 AAAA... user@host"
+
+# A domain you own. DNS records are added manually at your registrar.
+domain_name = "example.com"
+
+# Optional overrides (defaults are shown).
+# location              = "southafricanorth"
+# vm_size               = "Standard_B2as_v2"
+# worker_count          = 0
+# subdomains            = ["api"]
