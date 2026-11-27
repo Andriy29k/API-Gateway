@@ -55,4 +55,17 @@ Keep a private backup after every `apply`.
 | `admin_username` | `azureuser` | VM admin user |
 | `ssh_public_key` | — (required) | SSH public key content |
 | `domain_name` | — (required) | Your domain, e.g. `example.com` |
-| `subdomains` | `["api"]` | Subdomains pointing to the VM public IP |
+| `subdomains` | `["api"]` | Subdomains pointing to the VM public IP (single lowercase labels) |
+| `dns_record_ttl` | `300` | Suggested TTL (seconds) for the registrar records |
+
+## DNS records
+
+DNS stays at the domain registrar; Terraform does not create a DNS zone. After `terraform apply`:
+
+```bash
+terraform output dns_records          # A records to create at the registrar
+terraform output dns_check_commands   # commands to verify them
+```
+
+Create one `A` record per entry (host = `api`, value = the VM public IP, TTL = 300).
+DNS changes can take from a few minutes to a few hours to propagate.
