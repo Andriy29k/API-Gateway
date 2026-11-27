@@ -1,15 +1,15 @@
 variable "location" {
-  type        = string
-  default     = "southafricanorth"
+  type    = string
+  default = "southafricanorth"
 }
 
 variable "resource_group_name" {
-  type        = string
-  default     = "rg-api-gateway"
+  type    = string
+  default = "rg-api-gateway"
 }
 
 variable "tags" {
-  type        = map(string)
+  type = map(string)
   default = {
     Project     = "API-Gateway"
     Environment = "Development"
@@ -18,17 +18,17 @@ variable "tags" {
 }
 
 variable "vnet_address_space" {
-  type        = list(string)
-  default     = ["10.10.0.0/16"]
+  type    = list(string)
+  default = ["10.10.0.0/16"]
 }
 
 variable "subnet_address_prefix" {
-  type        = string
-  default     = "10.10.1.0/24"
+  type    = string
+  default = "10.10.1.0/24"
 }
 
 variable "admin_source_cidr" {
-  type        = string
+  type = string
 
   validation {
     condition     = can(cidrhost(var.admin_source_cidr, 0)) && var.admin_source_cidr != "0.0.0.0/0"
@@ -37,13 +37,13 @@ variable "admin_source_cidr" {
 }
 
 variable "vm_size" {
-  type        = string
-  default     = "Standard_B2as_v2"
+  type    = string
+  default = "Standard_B2as_v2"
 }
 
 variable "worker_count" {
-  type        = number
-  default     = 0
+  type    = number
+  default = 0
 
   validation {
     condition     = var.worker_count >= 0 && var.worker_count <= 1
@@ -52,12 +52,12 @@ variable "worker_count" {
 }
 
 variable "admin_username" {
-  type        = string
-  default     = "azureuser"
+  type    = string
+  default = "azureuser"
 }
 
 variable "ssh_public_key" {
-  type        = string
+  type = string
 
   validation {
     condition     = startswith(var.ssh_public_key, "ssh-")
@@ -66,10 +66,10 @@ variable "ssh_public_key" {
 }
 
 variable "domain_name" {
-  type        = string
+  type = string
 }
 
 variable "subdomains" {
-  type        = list(string)
-  default     = ["api"]
+  type    = list(string)
+  default = ["api"]
 }
