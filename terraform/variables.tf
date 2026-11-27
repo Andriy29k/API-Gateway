@@ -39,6 +39,32 @@ variable "admin_source_cidr" {
 variable "vm_size" {
   type    = string
   default = "Standard_B2as_v2"
+
+  # Only 2-vCPU sizes, so server + 1 worker never exceeds the 4 vCPU quota.
+  validation {
+    condition     = contains(["Standard_B2as_v2", "Standard_B2als_v2", "Standard_B2s_v2"], var.vm_size)
+    error_message = "vm_size must be a 2-vCPU size: Standard_B2as_v2, Standard_B2als_v2 or Standard_B2s_v2."
+  }
+}
+
+variable "os_disk_size_gb" {
+  type    = number
+  default = 30
+}
+
+variable "auto_shutdown_time" {
+  type    = string
+  default = "2200"
+
+  validation {
+    condition     = can(regex("^([01][0-9]|2[0-3])[0-5][0-9]$", var.auto_shutdown_time))
+    error_message = "auto_shutdown_time must be in HHMM format, e.g. 2200."
+  }
+}
+
+variable "auto_shutdown_timezone" {
+  type    = string
+  default = "FLE Standard Time"
 }
 
 variable "worker_count" {
