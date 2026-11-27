@@ -144,7 +144,6 @@ resource "azurerm_linux_virtual_machine" "server" {
   network_interface_ids           = [azurerm_network_interface.server.id]
   tags                            = var.tags
 
-  # Changing custom_data recreates the VM.
   custom_data = base64encode(templatefile("${path.module}/cloud-init/k3s-server.yaml.tftpl", {
     k3s_version   = var.k3s_version
     k3s_token     = random_password.k3s_token.result
