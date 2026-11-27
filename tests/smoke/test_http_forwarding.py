@@ -42,7 +42,8 @@ def test_gateway_sets_forwarding_headers(base_url):
     headers = resp.json()["headers"]
     assert headers["X-Real-IP"]
     assert headers["X-Forwarded-For"] == headers["X-Real-IP"]
-    assert headers["X-Forwarded-Proto"] == "http"
+    # http with Compose; https behind the k3s Ingress, where TLS ends at Traefik.
+    assert headers["X-Forwarded-Proto"] == base_url.split("://")[0]
     assert headers["Host"]
 
 
@@ -98,13 +99,17 @@ def test_body_over_backend_limit_returns_backend_413(base_url):
     resp = inspect(base_url, "POST", data=b"x" * BACKEND_TOO_LARGE)
     assert resp.status_code == 413
     body = resp.json()
-    # Backend (Flask) error format, not the gateway one: the gateway let the body through.
     assert body["status"] == 413
     assert body["error"] != "payload_too_large"
 
 
 def test_body_over_gateway_limit_returns_gateway_json_413(base_url):
-    resp = inspect(base_url, "POST", data=b"x" * GATEWAY_TOO_LARGE)
+    try:
+        resp = inspect(base_url, "POST", data=b"x" * GATEWAY_TOO_LARGE)
+    except requests.ConnectionError:
+        if base_url.startswith("https://"):
+            pytest.xfail("Traefik closes the connection after the early 413 (charts/api-gateway/README.md)")
+        raise
     assert resp.status_code == 413
     body = resp.json()
     assert body["error"] == "payload_too_large"
