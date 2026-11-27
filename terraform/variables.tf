@@ -93,9 +93,24 @@ variable "ssh_public_key" {
 
 variable "domain_name" {
   type = string
+
+  validation {
+    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.domain_name))
+    error_message = "domain_name must be a lowercase domain without protocol or trailing dot, e.g. example.com."
+  }
 }
 
 variable "subdomains" {
   type    = list(string)
   default = ["api"]
+
+  validation {
+    condition     = alltrue([for name in var.subdomains : can(regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", name))])
+    error_message = "Each subdomain must be a single lowercase label, e.g. api or grafana."
+  }
+}
+
+variable "dns_record_ttl" {
+  type    = number
+  default = 300
 }
