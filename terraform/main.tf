@@ -105,7 +105,7 @@ resource "azurerm_subnet_network_security_group_association" "k3s" {
 
 # --- k3s server ---
 
-# Shared secret for joining nodes. Stored only in the local state (see TERRAFORM.md, 1.2).
+# Shared secret for joining nodes. Stored only in the local state (see README.md, State).
 resource "random_password" "k3s_token" {
   length  = 48
   special = false

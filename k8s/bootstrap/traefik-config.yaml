@@ -1,5 +1,3 @@
-# Overrides values of the Traefik chart bundled with k3s.
-# Apply only after the production certificate works (TERRAFORM.md, section 7).
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
