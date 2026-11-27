@@ -92,3 +92,40 @@ Notes:
 
 - Changing anything that ends up in `custom_data` (template, `k3s_version`, `subdomains`, `domain_name`) **recreates the VM**. Upgrade k3s on a running cluster with the installer instead.
 - The installer is downloaded from `get.k3s.io` at boot, so the VM needs outbound Internet access (allowed by default in Azure).
+
+## Operations
+
+Stop and start the VM (Terraform does not track the power state, so no `plan` changes):
+
+```bash
+az vm deallocate -g rg-api-gateway -n vm-k3s-server   # stops compute billing
+az vm start      -g rg-api-gateway -n vm-k3s-server
+```
+
+`az vm stop` without deallocation keeps billing the compute. The VM is also deallocated every day at `auto_shutdown_time`.
+The static public IP and the OS disk are billed even while the VM is deallocated; the IP address does not change.
+
+If your admin public IP changes, SSH and port 6443 stop working. Update `admin_source_cidr` in `terraform.tfvars` and run `terraform plan` / `terraform apply` (only the NSG rules change).
+
+Back up the state after every `apply` to a private location outside the repository:
+
+```bash
+cp terraform.tfstate ~/backups/api-gateway-$(date +%F).tfstate
+```
+
+Destroy everything (only with explicit approval; the cluster and all its data are lost):
+
+```bash
+terraform plan -destroy
+terraform destroy
+```
+
+## Costs
+
+Retail prices for `southafricanorth` (2026-11):
+
+| Item | Price |
+|---|---|
+| VM `Standard_B2as_v2` | ≈ $0.098/h (≈ $71/month 24/7, ≈ $30/month at 10 h/day) |
+| OS disk StandardSSD E4 | ≈ $3.50/month |
+| Static Standard public IP | ≈ $3.65/month |
