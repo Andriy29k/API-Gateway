@@ -1,0 +1,16 @@
+#cloud-config
+write_files:
+  - path: /etc/rancher/k3s/config.yaml
+    owner: root:root
+    permissions: "0600"
+    content: |
+      token: "${k3s_token}"
+      write-kubeconfig-mode: "0600"
+      tls-san:
+        - "${public_ip}"
+%{ for fqdn in tls_san_fqdns ~}
+        - "${fqdn}"
+%{ endfor ~}
+
+runcmd:
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" sh -s - server

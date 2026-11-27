@@ -1,0 +1,11 @@
+#cloud-config
+write_files:
+  - path: /etc/rancher/k3s/config.yaml
+    owner: root:root
+    permissions: "0600"
+    content: |
+      token: "${k3s_token}"
+      server: "https://${server_private_ip}:6443"
+
+runcmd:
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" sh -s - agent

@@ -110,6 +110,16 @@ variable "subdomains" {
   }
 }
 
+variable "k3s_version" {
+  type    = string
+  default = "v1.37.2+k3s1"
+
+  validation {
+    condition     = can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+\\+k3s[0-9]+$", var.k3s_version))
+    error_message = "k3s_version must be a pinned release, e.g. v1.37.2+k3s1 (never latest or stable)."
+  }
+}
+
 variable "dns_record_ttl" {
   type    = number
   default = 300

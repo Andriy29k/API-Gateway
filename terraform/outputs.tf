@@ -14,6 +14,10 @@ output "ssh_command" {
   value = "ssh ${var.admin_username}@${azurerm_public_ip.server.ip_address}"
 }
 
+output "kubeconfig_command" {
+  value = "ssh ${var.admin_username}@${azurerm_public_ip.server.ip_address} 'sudo cat /etc/rancher/k3s/k3s.yaml' | sed 's/127.0.0.1/${azurerm_public_ip.server.ip_address}/' > ~/.kube/api-gateway.yaml && chmod 600 ~/.kube/api-gateway.yaml"
+}
+
 output "dns_records" {
   value = [
     for name in var.subdomains : {
