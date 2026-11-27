@@ -1,0 +1,49 @@
+image:
+  repository: ghcr.io/andriy29k
+  tag: latest
+  pullPolicy: Always
+
+services:
+  service-a:
+    enabled: true
+    replicas: 1
+    limitReq: zone=api_limit burst=10 delay=5
+  service-b:
+    enabled: true
+    replicas: 1
+    limitReq: zone=api_limit burst=10 delay=5
+  service-c:
+    enabled: true
+    replicas: 1
+    limitReq: zone=api_limit burst=10 delay=5
+  # Fault injection (/slow, /error): only for tests, disabled by default.
+  service-d:
+    enabled: false
+    replicas: 1
+    limitReq: zone=faults_limit burst=5 nodelay
+
+serviceResources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+gateway:
+  image: nginx:1.28-alpine
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  trustedProxies:
+    - 10.42.0.0/16
+
+ingress:
+  enabled: true
+  className: traefik
+  host: api.api-gateway.pp.ua
+  clusterIssuer: letsencrypt-prod
+  tlsSecretName: api-gateway-tls

@@ -13,3 +13,8 @@ spec:
               to: websecure
               scheme: https
               permanent: true
+    # Keep the real client IP: with "Cluster" the k3s servicelb rewrites the source to 10.42.0.1,
+    # so the gateway would rate limit all clients as one (T-019). Fine on a single node.
+    service:
+      spec:
+        externalTrafficPolicy: Local

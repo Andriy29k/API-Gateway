@@ -7,8 +7,8 @@ Later they can be managed by Argo CD (T-020).
 |---|---|
 | `cert-manager.yaml` | `HelmChart` for cert-manager `v1.21.3` (with CRDs), installed by the k3s built-in Helm controller into the `cert-manager` namespace |
 | `cluster-issuers.yaml` | `ClusterIssuer`s `letsencrypt-staging` and `letsencrypt-prod` (ACME HTTP-01 through the `traefik` ingress class) |
-| `whoami.yaml` | Test app with an Ingress on `api.api-gateway.pp.ua` and a certificate from the issuer in the annotation |
-| `traefik-config.yaml` | `HelmChartConfig` for the bundled Traefik: permanent HTTP → HTTPS redirect |
+| `whoami.yaml` | Test app with an Ingress on `api.api-gateway.pp.ua` and a certificate from the issuer in the annotation. Only for testing TLS on a new cluster; remove it before installing the gateway chart (same host) |
+| `traefik-config.yaml` | `HelmChartConfig` for the bundled Traefik: permanent HTTP → HTTPS redirect, and `externalTrafficPolicy: Local` so Traefik sees the real client IP |
 
 No private keys or Secrets are stored here: cert-manager creates them in the cluster.
 
@@ -45,10 +45,17 @@ k -n whoami delete secret whoami-tls
 k apply -f - < whoami.yaml
 curl -I https://api.api-gateway.pp.ua   # trusted certificate, no -k
 
-# 5. HTTP -> HTTPS redirect (after production works)
+# 5. HTTP -> HTTPS redirect and client IP (after production works)
 k apply -f - < traefik-config.yaml
-curl -I http://api.api-gateway.pp.ua    # 308 to https://
+curl -s -o /dev/null -w '%{http_code}\n' http://api.api-gateway.pp.ua   # 301 for GET, 308 for other methods
+curl -s https://api.api-gateway.pp.ua | grep -i x-real-ip                # your public IP, not 10.42.0.1
+
+# 6. Remove the test app before installing the gateway (charts/api-gateway, T-019)
+k delete namespace whoami
 ```
+
+Without `externalTrafficPolicy: Local`, the k3s servicelb rewrites the client address to `10.42.0.1`,
+so the gateway would apply one rate limit to all clients. `Local` is fine on a single node.
 
 With a local `kubectl` and `KUBECONFIG=~/.kube/api-gateway.yaml`, `kubectl apply -f <file>` works the same way.
 
