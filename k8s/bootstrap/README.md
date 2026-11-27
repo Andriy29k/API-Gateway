@@ -34,12 +34,13 @@ k -n cert-manager wait --for=condition=Available deploy --all --timeout=300s
 k apply -f - < cluster-issuers.yaml
 k get clusterissuer                     # both READY=True
 
-# 3. Test app with a staging certificate (only after DNS works)
+# 3. Test app (only after DNS works). On a new cluster or domain, first set the
+#    annotation in whoami.yaml to letsencrypt-staging and check the issuer:
 k apply -f - < whoami.yaml
 k -n whoami get certificate             # whoami-tls READY=True
 curl -kv https://api.api-gateway.pp.ua 2>&1 | grep -i issuer   # (STAGING) Let's Encrypt
 
-# 4. Production: change the annotation in whoami.yaml to letsencrypt-prod, then
+# 4. Production: set the annotation back to letsencrypt-prod (the committed value), then
 k -n whoami delete secret whoami-tls
 k apply -f - < whoami.yaml
 curl -I https://api.api-gateway.pp.ua   # trusted certificate, no -k
@@ -61,4 +62,6 @@ k -n cert-manager logs deploy/cert-manager --tail=50
 
 - Let's Encrypt production has rate limits (e.g. 5 failed validations per hostname per hour). Always test with staging first.
 - Renewal is automatic (cert-manager renews about 30 days before expiry).
-- With the redirect enabled, the HTTP-01 request is redirected to HTTPS; Let's Encrypt follows the redirect, so renewals keep working.
+- With the redirect enabled, the HTTP-01 request is redirected to HTTPS; Let's Encrypt follows the redirect, so renewals keep working (tested with a temporary staging certificate).
+- After a DNS change, your local resolver may still return the old IP for a few hours. Test the VM directly:
+  `curl --resolve api.api-gateway.pp.ua:443:<public-ip> https://api.api-gateway.pp.ua/`.

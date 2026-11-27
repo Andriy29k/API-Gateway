@@ -1,5 +1,5 @@
 # Test app to check Ingress + TLS before the API Gateway is deployed (T-019).
-# Switch the issuer annotation to letsencrypt-prod only after staging works.
+# Test new issuers with letsencrypt-staging first (production has strict rate limits).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -50,7 +50,7 @@ metadata:
   name: whoami
   namespace: whoami
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: traefik
   tls:
