@@ -71,3 +71,47 @@ The gateway, the smoke tests and the Compose/Dockerfile health checks depend on 
 | T-030 | `030-fastapi-service-d`    | Migrate service-d (`async` `/slow`, `/error`)        | T-027      |
 
 Each migration task is done when the service's unit tests pass and the CI smoke tests are green without changes to `tests/smoke/`.
+
+---
+
+# Run a self-managed single-node k3s cluster on an Azure VM, managed with Terraform
+
+### Context
+
+The project needs a public Kubernetes environment for the gateway (Helm, Argo CD, monitoring, demo). Constraints:
+
+- Azure subscription with a regional quota of **4 vCPU**.
+- In the EU regions checked (westeurope, northeurope, polandcentral) the subscription is offered no 2-vCPU sizes; `southafricanorth` offers them.
+- One person maintains the project; costs must stay low.
+- A domain (`api-gateway.pp.ua`) with DNS hosted at the registrar (NIC.UA).
+
+### Options
+
+1. **AKS.** Managed control plane, but extra cost and more Azure-specific setup than the project needs.
+2. **k3s on one Azure VM.** Lightweight, includes Traefik, fits the quota; the cluster is our responsibility.
+3. **Local cluster only (kind / k3d).** Free, but no public endpoint, TLS or real GitOps demo.
+
+### Decision
+
+Option 2:
+
+- Terraform (AzureRM) creates the resource group, VNet/subnet, NSG, static public IP and one `Standard_B2as_v2` VM (2 vCPU / 8 GB) with Ubuntu 24.04 in `southafricanorth`. An optional worker (`worker_count = 1`) still fits the 4 vCPU quota.
+- k3s (pinned version) is installed on first boot by cloud-init. Traefik is the ingress controller.
+- TLS: cert-manager + Let's Encrypt (HTTP-01 through Traefik), manifests in `k8s/bootstrap/`.
+- DNS stays at the registrar. Terraform only outputs the `A` records; they are created manually.
+- Terraform state is local (git-ignored) and backed up manually.
+- CI runs only static checks (`fmt`, `validate`, `tflint`), never `plan`/`apply`.
+
+### Consequences
+
+Benefits:
+- Low cost: about $78/month 24/7, about $37/month with the daily auto-shutdown and deallocation when idle.
+- Simple, fully declarative setup that can be recreated with `terraform apply`.
+
+Costs and risks:
+- Single node, no high availability; the cluster and its data are lost with the VM.
+- Burstable CPU (about 40% baseline): long load tests can use up CPU credits.
+- About 200 ms latency from Ukraine to `southafricanorth`.
+- Local state is a single copy and contains the k3s join token. Option for later: a remote backend in the existing storage account.
+- SSH and the Kubernetes API are open only to one admin IP; when it changes, `admin_source_cidr` must be updated and applied.
+- Changing cloud-init inputs (`k3s_version`, `domain_name`, `subdomains`) recreates the VM.
