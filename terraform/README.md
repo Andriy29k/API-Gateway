@@ -47,7 +47,10 @@ Keep a private backup after every `apply`.
 | `vnet_address_space` | `["10.10.0.0/16"]` | VNet address space |
 | `subnet_address_prefix` | `10.10.1.0/24` | k3s subnet |
 | `admin_source_cidr` | — (required) | Admin public IP/CIDR for SSH and the Kubernetes API; `0.0.0.0/0` is rejected |
-| `vm_size` | `Standard_B2as_v2` | VM size (2 vCPU / 8 GB) |
+| `vm_size` | `Standard_B2as_v2` | VM size (2 vCPU / 8 GB); only 2-vCPU sizes are accepted |
+| `os_disk_size_gb` | `30` | OS disk size (StandardSSD, billed as the E4 32 GB tier) |
+| `auto_shutdown_time` | `2200` | Daily auto-shutdown time, `HHMM` |
+| `auto_shutdown_timezone` | `FLE Standard Time` | Windows time zone ID (Kyiv) |
 | `worker_count` | `0` | Optional workers, 0 or 1 (4 vCPU quota) |
 | `admin_username` | `azureuser` | VM admin user |
 | `ssh_public_key` | — (required) | SSH public key content |
