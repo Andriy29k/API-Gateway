@@ -47,7 +47,7 @@ spec:
             capabilities:
               drop: [ALL]
           volumeMounts:
-            # gunicorn needs a writable /tmp for its worker heartbeat files.
+            # Writable /tmp: gunicorn (Flask services) keeps its worker heartbeat files there.
             - name: tmp
               mountPath: /tmp
       volumes:
