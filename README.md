@@ -208,8 +208,9 @@ is an expected failure (`xfail`) over HTTPS. Results of the load test: [load/REA
 | `terraform.yml` | PR / push to `terraform`, `dev`, `main` touching `terraform/` | `terraform fmt`, `validate`, `tflint` (no plan/apply) |
 
 Flow: task branch → PR into `dev` → PR `dev` → `main`. On `main` the images are published, and Argo CD deploys
-whatever `charts/api-gateway` on `main` describes. The image version is the `image.tag` value in
-[charts/api-gateway/values.yaml](charts/api-gateway/values.yaml) (updated by hand for now).
+whatever `charts/api-gateway` on `main` describes. The Argo CD Application sets `image.tag` to
+`sha-<commit on main>`, so no tag needs to be committed: each merge into `main` deploys the images built from it
+(see [k8s/argocd/README.md](k8s/argocd/README.md)).
 
 ## Deploy to Azure and k3s
 
@@ -226,9 +227,10 @@ Full details are in the linked READMEs; the order for a new environment is:
 ## Monitoring and alerting
 
 - **Prometheus** collects container CPU/RAM (cAdvisor), pod state and restarts (kube-state-metrics), node metrics,
-  Traefik request counts and response times, and NGINX connection metrics (exporter sidecar).
+  Traefik request counts and response times, NGINX connection metrics (exporter sidecar), and per-service request
+  counts and response times by route (`prometheus_client` in each service, internal port `9100`).
 - **Grafana** dashboard *API Gateway overview*: CPU and RAM by pod, gateway response time (p50/p95/p99),
-  requests by status code and `429` rate, restarts, crash-looping containers, pods not ready, firing alerts.
+  requests by status code and `429` rate, service requests/s and p95 by route, restarts, crash-looping containers, pods not ready, firing alerts.
 - **Alerting rules**: crash loops, pods not ready, targets down, node memory/disk, gateway 5xx ratio, rate limiting,
   high latency. There is no Alertmanager: alerts are visible in Prometheus and Grafana only.
 
@@ -241,6 +243,7 @@ Details and PromQL: [k8s/argocd/README.md](k8s/argocd/README.md).
 | Compose (`.env`) | `GATEWAY_PORT` | `8080` | Published gateway port |
 | Services | `MAX_BODY_BYTES` | `65536` | Max request body |
 | service-d | `MAX_SLOW_SECONDS` | `30` | Max delay for `/slow` |
+| Services | `METRICS_PORT` | `9100` (Dockerfile) | Port of the Prometheus metrics server; empty = off |
 | Tests | `GATEWAY_URL` | `http://localhost:8080` | Gateway under test |
 | Smoke tests | `SMOKE_PACE` | `0.25` | Pause between tests (seconds), keeps the suite under the rate limit |
 | Helm | see [charts/api-gateway/README.md](charts/api-gateway/README.md#values) | | Images, enabled services, limits, Ingress |

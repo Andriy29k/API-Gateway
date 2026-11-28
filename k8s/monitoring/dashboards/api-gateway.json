@@ -6,7 +6,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "refresh": "30s",
   "time": {
@@ -708,6 +708,106 @@
       ]
     },
     {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Service requests/s by status",
+      "description": "Measured inside each backend (prometheus_client, port 9100); health probes excluded.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (app_kubernetes_io_name, status) (rate(http_requests_total{namespace=~\"$namespace\", route!=\"/health\"}[$__rate_interval]))",
+          "legendFormat": "{{app_kubernetes_io_name}} {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Service p95 response time by route",
+      "description": "Time spent in the backend only (without the gateway); health probes excluded.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, app_kubernetes_io_name, route) (rate(http_request_duration_seconds_bucket{namespace=~\"$namespace\", route!=\"/health\"}[$__rate_interval])))",
+          "legendFormat": "{{app_kubernetes_io_name}} {{route}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
       "id": 13,
       "type": "table",
       "title": "Firing and pending alerts",
@@ -715,10 +815,10 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Prometheus alerting rules (k8s/argocd/prometheus.yaml, T-041). Empty table = no alerts. Details: Grafana \u2192 Alerting \u2192 Alert rules.",
+      "description": "Prometheus alerting rules (k8s/argocd/prometheus.yaml, T-041). Empty table = no alerts. Details: Grafana → Alerting → Alert rules.",
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 36,
         "w": 24,
         "h": 7
       },

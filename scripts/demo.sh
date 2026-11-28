@@ -61,11 +61,12 @@ step_failure() {
 
 step_faults() {
   title "Fault injection with service-d (enabled only for the demo)"
-  run "ssh $(vm) \"sudo k3s kubectl -n argocd patch application api-gateway --type merge -p '{\\\"spec\\\":{\\\"source\\\":{\\\"helm\\\":{\\\"parameters\\\":[{\\\"name\\\":\\\"services.service-d.enabled\\\",\\\"value\\\":\\\"true\\\"}]}}}}'\""
+  # Append the parameter (JSON patch): replacing the list would also drop the image.tag parameter.
+  run "ssh $(vm) \"sudo k3s kubectl -n argocd patch application api-gateway --type json -p '[{\\\"op\\\":\\\"add\\\",\\\"path\\\":\\\"/spec/source/helm/parameters/-\\\",\\\"value\\\":{\\\"name\\\":\\\"services.service-d.enabled\\\",\\\"value\\\":\\\"true\\\"}}]'\""
   run "for i in \$(seq 1 40); do [ \"\$(curl -s -o /dev/null -w '%{http_code}' $GATEWAY_URL/api/service-d/hello)\" = 200 ] && break; sleep 3; done; echo service-d is up"
   run "curl -s -w '  (%{http_code})\n' '$GATEWAY_URL/api/service-d/error?status=503'"
   run "time curl -s -w '  (%{http_code})\n' '$GATEWAY_URL/api/service-d/slow?seconds=12'"
-  run "ssh $(vm) \"sudo k3s kubectl -n argocd patch application api-gateway --type merge -p '{\\\"spec\\\":{\\\"source\\\":{\\\"helm\\\":{\\\"parameters\\\":null}}}}'\""
+  run "ssh $(vm) sudo k3s kubectl apply -f - < $REPO_ROOT/k8s/argocd/api-gateway.yaml"
   run "for i in \$(seq 1 40); do [ \"\$(curl -s -o /dev/null -w '%{http_code}' $GATEWAY_URL/api/service-d/hello)\" = 404 ] && break; sleep 3; done; echo service-d is removed again"
 }
 

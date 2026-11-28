@@ -8,7 +8,7 @@ Client --HTTPS--> Traefik Ingress (TLS, cert-manager) --> gateway:8080 (NGINX) -
 
 | Resource | Description |
 |---|---|
-| `Deployment`/`Service` per backend | Image `<image.repository>/api-gateway-<service>:<image.tag>` from GHCR (T-018), port 8000, probes on `/health`, non-root, read-only root filesystem |
+| `Deployment`/`Service` per backend | Image `<image.repository>/api-gateway-<service>:<image.tag>` from GHCR (T-018), port 8000, probes on `/health`, non-root, read-only root filesystem; metrics on port 9100 (pod annotations, not in the Service) |
 | `ConfigMap gateway-config` | `nginx.conf` + `default.conf`, the Kubernetes version of `gateway/` |
 | `Deployment`/`Service gateway` | `nginx:1.28-alpine` with the ConfigMap, probes on `/health`, restarts when the config changes |
 | `Ingress gateway` | Host `ingress.host`, TLS certificate from the `ingress.clusterIssuer` ClusterIssuer (`k8s/bootstrap/`) |
@@ -19,6 +19,7 @@ Client --HTTPS--> Traefik Ingress (TLS, cert-manager) --> gateway:8080 (NGINX) -
 - **service-d (fault injection) is disabled by default.** Enable it only for tests: `--set services.service-d.enabled=true`.
 - The client IP comes from the `X-Forwarded-For` header set by Traefik (`gateway.trustedProxies`, NGINX `real_ip`), so rate limits and `X-Real-IP` work per client and not per Traefik pod.
 - `X-Forwarded-Proto` is passed on from Traefik (`https`), because TLS ends there.
+- Backend metrics: each service serves `http_requests_total` and `http_request_duration_seconds` (by method, route template, status) on port `9100`. The gateway only proxies port `8000`, so `/metrics` is not public.
 - Metrics (T-022): an internal `stub_status` server on `127.0.0.1:8081` and an `nginx-prometheus-exporter` sidecar on port `9113`, scraped by Prometheus through `prometheus.io/*` pod annotations. Not present in Compose.
 
 The NGINX config exists twice (`gateway/` for Compose, the ConfigMap here). Change both and run the smoke tests against both.
@@ -28,7 +29,7 @@ The NGINX config exists twice (`gateway/` for Compose, the ConfigMap here). Chan
 | Key | Default | Description |
 |---|---|---|
 | `image.repository` | `ghcr.io/andriy29k` | Registry and owner of the backend images |
-| `image.tag` | `sha-fc3223b` | Image tag for all backends (pinned `sha-<short>` from GHCR; updated by hand until T-021) |
+| `image.tag` | `sha-fc3223b` | Image tag for all backends. On k3s Argo CD overrides it with `sha-<commit on main>` (T-021); this default is only used by `helm template` / manual installs |
 | `image.pullPolicy` | `IfNotPresent` | Pinned tags never change, so no re-pull is needed |
 | `services.<name>.enabled` | `true` (`false` for service-d) | Deploy the service and its gateway route |
 | `services.<name>.replicas` | `1` | Pods per backend |
@@ -68,14 +69,16 @@ curl https://api.api-gateway.pp.ua/health
 curl https://api.api-gateway.pp.ua/api/service-a/hello
 ```
 
-Smoke tests against the cluster need service-d. Enable it temporarily with a parameter on the Argo CD Application
-(not stored in Git), run the tests, then remove the parameter; Argo CD prunes service-d again:
+Smoke tests against the cluster need service-d. Add a temporary parameter to the Argo CD Application
+(not stored in Git), run the tests, then re-apply the Application from Git; Argo CD prunes service-d again.
+Append the parameter (`add …/parameters/-`): replacing the whole list would also drop the `image.tag` parameter
+and roll the services back to the default tag.
 
 ```bash
-k -n argocd patch application api-gateway --type merge \
-  -p '{"spec":{"source":{"helm":{"parameters":[{"name":"services.service-d.enabled","value":"true"}]}}}}'
+k -n argocd patch application api-gateway --type json \
+  -p '[{"op":"add","path":"/spec/source/helm/parameters/-","value":{"name":"services.service-d.enabled","value":"true"}}]'
 GATEWAY_URL=https://api.api-gateway.pp.ua python -m pytest tests/smoke -v -rx
-k -n argocd patch application api-gateway --type merge -p '{"spec":{"source":{"helm":{"parameters":null}}}}'
+ssh azureuser@<public-ip> sudo k3s kubectl apply -f - < k8s/argocd/api-gateway.yaml
 ```
 
 Expected result: all tests pass, `test_body_over_gateway_limit_returns_gateway_json_413` is `xfail` (see below).
@@ -88,5 +91,4 @@ Expected result: all tests pass, `test_body_over_gateway_limit_returns_gateway_j
 - Traefik must run with `externalTrafficPolicy: Local` (`k8s/bootstrap/traefik-config.yaml`), otherwise all clients share one rate limit.
 
 - The gateway runs the official `nginx` image, whose master process runs as root (same as Compose).
-- The image tag is updated by hand until T-021 automates it.
 - One tag for all backends.
