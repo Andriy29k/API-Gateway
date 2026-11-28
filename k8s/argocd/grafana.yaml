@@ -1,0 +1,78 @@
+# Grafana (community chart) in the monitoring namespace, managed by Argo CD (T-023).
+# Source 1: the chart with values. Source 2: dashboards from this repo (k8s/monitoring/dashboards),
+# packed into a ConfigMap that the Grafana sidecar loads.
+# The admin password is NOT in Git: create the Secret grafana-admin once (see k8s/argocd/README.md).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana-community.github.io/helm-charts
+      chart: grafana
+      targetRevision: 14.6.1
+      helm:
+        releaseName: grafana
+        valuesObject:
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+          grafana.ini:
+            server:
+              root_url: https://grafana.api-gateway.pp.ua
+            auth.anonymous:
+              enabled: false
+            users:
+              allow_sign_up: false
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+            hosts:
+              - grafana.api-gateway.pp.ua
+            tls:
+              - secretName: grafana-tls
+                hosts:
+                  - grafana.api-gateway.pp.ua
+          datasources:
+            datasources.yaml:
+              apiVersion: 1
+              datasources:
+                - name: Prometheus
+                  uid: prometheus
+                  type: prometheus
+                  url: http://prometheus-server.monitoring.svc
+                  access: proxy
+                  isDefault: true
+                  editable: false
+          sidecar:
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+          # Dashboards and the datasource are provisioned from Git, so no volume is needed.
+          persistence:
+            enabled: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+    - repoURL: https://github.com/Andriy29k/API-Gateway.git
+      targetRevision: main
+      path: k8s/monitoring/dashboards
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
