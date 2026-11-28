@@ -74,6 +74,19 @@ data:
     }
 
   default.conf: |
+    {{- if .Values.gateway.metrics.enabled }}
+    # Connection and request counters for the nginx-prometheus-exporter sidecar.
+    # Listens on localhost only, so it is not reachable from outside the pod.
+    server {
+        listen 127.0.0.1:8081;
+        access_log off;
+
+        location = /stub_status {
+            stub_status;
+        }
+    }
+
+    {{- end }}
     server {
         listen 8080;
         server_name _;

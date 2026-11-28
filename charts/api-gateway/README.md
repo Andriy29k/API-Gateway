@@ -19,6 +19,7 @@ Client --HTTPS--> Traefik Ingress (TLS, cert-manager) --> gateway:8080 (NGINX) -
 - **service-d (fault injection) is disabled by default.** Enable it only for tests: `--set services.service-d.enabled=true`.
 - The client IP comes from the `X-Forwarded-For` header set by Traefik (`gateway.trustedProxies`, NGINX `real_ip`), so rate limits and `X-Real-IP` work per client and not per Traefik pod.
 - `X-Forwarded-Proto` is passed on from Traefik (`https`), because TLS ends there.
+- Metrics (T-022): an internal `stub_status` server on `127.0.0.1:8081` and an `nginx-prometheus-exporter` sidecar on port `9113`, scraped by Prometheus through `prometheus.io/*` pod annotations. Not present in Compose.
 
 The NGINX config exists twice (`gateway/` for Compose, the ConfigMap here). Change both and run the smoke tests against both.
 
@@ -36,6 +37,7 @@ The NGINX config exists twice (`gateway/` for Compose, the ConfigMap here). Chan
 | `gateway.image` | `nginx:1.28-alpine` | Same image as in Compose |
 | `gateway.replicas` | `1` | Rate limit zones are per pod: more replicas multiply the limit |
 | `gateway.trustedProxies` | `["10.42.0.0/16"]` | CIDRs whose `X-Forwarded-For` is trusted (k3s pod network) |
+| `gateway.metrics.enabled` | `true` | NGINX `stub_status` + exporter sidecar (`gateway.metrics.image`: `nginx/nginx-prometheus-exporter:1.5.3`) |
 | `ingress.enabled` | `true` | Create the Ingress |
 | `ingress.host` | `api.api-gateway.pp.ua` | Public host name |
 | `ingress.clusterIssuer` | `letsencrypt-prod` | cert-manager ClusterIssuer |

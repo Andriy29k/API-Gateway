@@ -40,6 +40,15 @@ gateway:
       memory: 128Mi
   trustedProxies:
     - 10.42.0.0/16
+  metrics:
+    enabled: true
+    image: nginx/nginx-prometheus-exporter:1.5.3
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        memory: 32Mi
 
 ingress:
   enabled: true
