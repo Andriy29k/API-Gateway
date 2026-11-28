@@ -1,4 +1,4 @@
-"""service-b: demo upstream used to verify method, header and body forwarding."""
+"""service-b: demo upstream used to verify method, header and body forwarding (FastAPI, ADR-001)."""
 import json
 import logging
 import os
@@ -6,9 +6,13 @@ import re
 import sys
 import time
 import uuid
+from http import HTTPStatus
 
-from flask import Flask, g, jsonify, request
-from werkzeug.exceptions import HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 SERVICE_NAME = "service-b"
 
@@ -42,121 +46,141 @@ def _get_logger():
     return logger
 
 
-def create_app(config=None):
-    app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_BODY_BYTES", "65536"))
-    if config:
-        app.config.update(config)
+def _error(status, request_id, detail=None):
+    """JSON error body shared by all error responses (same format as the Flask version)."""
+    body = {"error": HTTPStatus(status).phrase, "status": status, "request_id": request_id}
+    if detail:
+        body["detail"] = detail
+    return JSONResponse(body, status_code=status)
+
+
+def _is_json(content_type):
+    """Same rule as Flask's request.is_json: application/json or application/*+json."""
+    mimetype = content_type.split(";")[0].strip().lower()
+    return mimetype == "application/json" or (mimetype.startswith("application/") and mimetype.endswith("+json"))
+
+
+def create_app(max_body_bytes=None):
+    if max_body_bytes is None:
+        max_body_bytes = int(os.environ.get("MAX_BODY_BYTES", "65536"))
     logger = _get_logger()
 
-    @app.before_request
-    def _start_request():
-        g.start = time.perf_counter()
-        incoming = request.headers.get("X-Request-ID", "")
-        g.request_id = incoming if _REQUEST_ID_RE.match(incoming) else uuid.uuid4().hex
+    # docs_url=None: /docs is defined below with a relative link to openapi.json,
+    # so Swagger UI also works through the gateway (/api/service-b/docs).
+    app = FastAPI(title=SERVICE_NAME, docs_url=None, redoc_url=None)
 
-    @app.after_request
-    def _finish_request(response):
-        response.headers["X-Request-ID"] = g.get("request_id", "-")
-        duration_ms = round((time.perf_counter() - g.get("start", time.perf_counter())) * 1000, 2)
+    async def read_body(request: Request):
+        """Read the body; also limits requests without Content-Length (chunked)."""
+        body = await request.body()
+        if len(body) > max_body_bytes:
+            raise HTTPException(status_code=413)
+        return body
+
+    @app.middleware("http")
+    async def request_context(request: Request, call_next):
+        start = time.perf_counter()
+        incoming = request.headers.get("X-Request-ID", "")
+        request_id = incoming if _REQUEST_ID_RE.match(incoming) else uuid.uuid4().hex
+        request.state.request_id = request_id
+
+        content_length = request.headers.get("Content-Length", "")
+        if content_length.isdigit() and int(content_length) > max_body_bytes:
+            response = _error(413, request_id)
+        else:
+            try:
+                response = await call_next(request)
+            except Exception as err:
+                # Full details go to the server log only, never to the client.
+                logger.error(json.dumps({"service": SERVICE_NAME, "event": "unhandled_exception", "type": type(err).__name__}))
+                response = _error(500, request_id)
+
+        response.headers["X-Request-ID"] = request_id
         # Log metadata only: never query string, headers, cookies or body.
         logger.info(
             json.dumps(
                 {
                     "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                     "service": SERVICE_NAME,
-                    "request_id": g.get("request_id", "-"),
+                    "request_id": request_id,
                     "method": request.method,
-                    "path": request.path[:_MAX_LOGGED_PATH],
+                    "path": request.url.path[:_MAX_LOGGED_PATH],
                     "status": response.status_code,
-                    "duration_ms": duration_ms,
+                    "duration_ms": round((time.perf_counter() - start) * 1000, 2),
                 }
             )
         )
         return response
 
-    @app.errorhandler(HTTPException)
-    def _http_error(err):
-        return (
-            jsonify(
-                {
-                    "error": err.name,
-                    "status": err.code,
-                    "request_id": g.get("request_id", "-"),
-                }
-            ),
-            err.code,
-        )
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException):
+        response = _error(exc.status_code, request.state.request_id)
+        if exc.headers:
+            response.headers.update(exc.headers)
+        return response
 
-    @app.errorhandler(Exception)
-    def _unexpected_error(err):
-        # Full details go to the server log only, never to the client.
-        logger.error(json.dumps({"service": SERVICE_NAME, "event": "unhandled_exception", "type": type(err).__name__}))
-        return (
-            jsonify({"error": "Internal Server Error", "status": 500, "request_id": g.get("request_id", "-")}),
-            500,
-        )
+    # FastAPI answers invalid input with 422 by default; the API contract uses 400.
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError):
+        first = exc.errors()[0] if exc.errors() else {}
+        detail = f"{'.'.join(str(p) for p in first.get('loc', []))}: {first.get('msg', 'invalid input')}"
+        return _error(400, request.state.request_id, detail)
 
+    @app.get("/docs", include_in_schema=False)
+    async def docs():
+        return get_swagger_ui_html(openapi_url="openapi.json", title=f"{SERVICE_NAME} - docs")
+
+    # HEAD is added explicitly: unlike Flask, FastAPI does not add it to GET routes.
+    # include_in_schema=False keeps one operation per path in the OpenAPI docs. @app.get is the
+    # inner decorator, so the GET route is registered first and a 405 lists GET in its Allow header.
+    @app.head("/health", include_in_schema=False)
     @app.get("/health")
-    def health():
-        return jsonify({"status": "ok", "service": SERVICE_NAME})
+    async def health():
+        return {"status": "ok", "service": SERVICE_NAME}
 
+    @app.head("/hello", include_in_schema=False)
     @app.get("/hello")
-    def hello():
-        return jsonify({"service": SERVICE_NAME, "message": "hello", "request_id": g.request_id})
+    async def hello(request: Request):
+        return {"service": SERVICE_NAME, "message": "hello", "request_id": request.state.request_id}
 
     @app.post("/echo")
-    def echo():
-        if not request.is_json:
-            return (
-                jsonify(
-                    {
-                        "error": "Unsupported Media Type",
-                        "status": 415,
-                        "detail": "Content-Type must be application/json",
-                        "request_id": g.request_id,
-                    }
-                ),
-                415,
-            )
-        payload = request.get_json(silent=True)
+    async def echo(request: Request):
+        request_id = request.state.request_id
+        if not _is_json(request.headers.get("Content-Type", "")):
+            return _error(415, request_id, "Content-Type must be application/json")
+        body = await read_body(request)
+        try:
+            payload = json.loads(body)
+        except ValueError:  # also covers UnicodeDecodeError
+            payload = None
         if payload is None:
-            return (
-                jsonify(
-                    {
-                        "error": "Bad Request",
-                        "status": 400,
-                        "detail": "Body is not valid JSON",
-                        "request_id": g.request_id,
-                    }
-                ),
-                400,
-            )
-        return jsonify(
-            {
-                "service": SERVICE_NAME,
-                "received": payload,
-                "content_length": request.content_length,
-                "request_id": g.request_id,
-            }
-        )
+            return _error(400, request_id, "Body is not valid JSON")
+        return {
+            "service": SERVICE_NAME,
+            "received": payload,
+            "content_length": len(body),
+            "request_id": request_id,
+        }
 
-    @app.route("/inspect", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-    def inspect():
+    # One decorator per method, so every method gets its own OpenAPI operation.
+    @app.head("/inspect", include_in_schema=False)
+    @app.delete("/inspect")
+    @app.patch("/inspect")
+    @app.put("/inspect")
+    @app.post("/inspect")
+    @app.get("/inspect")
+    async def inspect(request: Request):
         """Describe the received request, so tests can verify what the gateway forwards."""
         headers = {
             name: request.headers[name][:_MAX_HEADER_VALUE]
             for name in _INSPECT_HEADERS
             if name in request.headers
         }
-        return jsonify(
-            {
-                "service": SERVICE_NAME,
-                "method": request.method,
-                "headers": headers,
-                "body_bytes": len(request.get_data()),
-                "request_id": g.request_id,
-            }
-        )
+        return {
+            "service": SERVICE_NAME,
+            "method": request.method,
+            "headers": headers,
+            "body_bytes": len(await read_body(request)),
+            "request_id": request.state.request_id,
+        }
 
     return app
