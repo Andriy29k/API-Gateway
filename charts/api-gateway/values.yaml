@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/andriy29k
-  tag: sha-2086296
+  tag: sha-170d209
   pullPolicy: IfNotPresent
 
 services:

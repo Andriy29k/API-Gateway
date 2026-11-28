@@ -28,7 +28,7 @@ The NGINX config exists twice (`gateway/` for Compose, the ConfigMap here). Chan
 | Key | Default | Description |
 |---|---|---|
 | `image.repository` | `ghcr.io/andriy29k` | Registry and owner of the backend images |
-| `image.tag` | `sha-2086296` | Image tag for all backends (pinned `sha-<short>` from GHCR; updated by hand until T-021) |
+| `image.tag` | `sha-170d209` | Image tag for all backends (pinned `sha-<short>` from GHCR; updated by hand until T-021) |
 | `image.pullPolicy` | `IfNotPresent` | Pinned tags never change, so no re-pull is needed |
 | `services.<name>.enabled` | `true` (`false` for service-d) | Deploy the service and its gateway route |
 | `services.<name>.replicas` | `1` | Pods per backend |
