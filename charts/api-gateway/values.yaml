@@ -1,7 +1,7 @@
 image:
   repository: ghcr.io/andriy29k
-  tag: latest
-  pullPolicy: Always
+  tag: sha-17f2756
+  pullPolicy: IfNotPresent
 
 services:
   service-a:

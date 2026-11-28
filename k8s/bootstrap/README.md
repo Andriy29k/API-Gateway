@@ -8,6 +8,7 @@ Later they can be managed by Argo CD (T-020).
 | `cert-manager.yaml` | `HelmChart` for cert-manager `v1.21.3` (with CRDs), installed by the k3s built-in Helm controller into the `cert-manager` namespace |
 | `cluster-issuers.yaml` | `ClusterIssuer`s `letsencrypt-staging` and `letsencrypt-prod` (ACME HTTP-01 through the `traefik` ingress class) |
 | `whoami.yaml` | Test app with an Ingress on `api.api-gateway.pp.ua` and a certificate from the issuer in the annotation. Only for testing TLS on a new cluster; remove it before installing the gateway chart (same host) |
+| `argocd.yaml` | `HelmChart` for Argo CD (T-020), see [`../argocd/README.md`](../argocd/README.md) |
 | `traefik-config.yaml` | `HelmChartConfig` for the bundled Traefik: permanent HTTP → HTTPS redirect, and `externalTrafficPolicy: Local` so Traefik sees the real client IP |
 
 No private keys or Secrets are stored here: cert-manager creates them in the cluster.
