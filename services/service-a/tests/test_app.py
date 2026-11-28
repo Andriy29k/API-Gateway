@@ -1,5 +1,7 @@
 import json
 import re
+import socket
+import urllib.request
 
 import pytest
 from fastapi.testclient import TestClient
@@ -115,3 +117,33 @@ def test_log_has_request_id_and_no_query_string(client, caplog):
     assert entry["status"] == 200
     assert "duration_ms" in entry
     assert "secret-token" not in json.dumps(entry)
+
+
+def _sample(client, name, labels):
+    return client.app.state.metrics_registry.get_sample_value(name, labels)
+
+
+def test_metrics_use_route_template(client):
+    client.get("/hello?name=x")
+    labels = {"method": "GET", "route": "/hello", "status": "200"}
+    assert _sample(client, "http_requests_total", labels) == 1.0
+    assert _sample(client, "http_request_duration_seconds_count", {"method": "GET", "route": "/hello"}) == 1.0
+
+
+def test_metrics_unknown_route_and_method_are_grouped(client):
+    client.get("/does-not-exist/123")
+    client.request("FOO", "/health")
+    assert _sample(client, "http_requests_total", {"method": "GET", "route": "unmatched", "status": "404"}) == 1.0
+    assert _sample(client, "http_requests_total", {"method": "OTHER", "route": "/health", "status": "405"}) == 1.0
+
+
+def test_metrics_served_on_separate_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    # The context manager runs the lifespan, which starts the metrics server.
+    with TestClient(create_app(metrics_port=str(port))) as client:
+        client.get("/health")
+        text = urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=2).read().decode()
+        assert 'http_requests_total{method="GET",route="/health",status="200"} 1.0' in text
+        assert client.get("/metrics").status_code == 404  # not on the API port

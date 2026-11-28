@@ -49,14 +49,16 @@ Nobody restored it: Argo CD saw the difference from Git and reverted it (self-he
 
 ### 5. Fault injection (2 min) – `bash scripts/demo.sh faults`
 
-service-d is enabled only for this step (Argo CD Application parameter, not in Git), then removed again.
+service-d is enabled only for this step (Argo CD Application parameter, not in Git), then removed again by re-applying `k8s/argocd/api-gateway.yaml`.
 `/error?status=503` → the service's own `503` is passed through; `/slow?seconds=12` → JSON `504` after 10 s (`proxy_read_timeout`).
 
 ### 6. CI and GitOps deploy (4 min)
 
 1. GitHub Actions: a green `CI` run (unit tests per service, Compose smoke tests), `Images`, `Terraform`.
 2. Merge the prepared PR `dev` → `main` (service-b replicas 1 → 2).
-3. Argo CD: press **Refresh** on `api-gateway` (or wait up to 3 min) → the new commit is synced.
+3. Argo CD: press **Refresh** on `api-gateway` (or wait up to 3 min) → the new commit is synced. The images are tagged
+   with the new commit (`sha-<short>`, T-021): if Argo CD is faster than the `Images` workflow, the new pods wait in
+   `ImagePullBackOff` for a minute while the old pods keep serving.
 4. `bash scripts/demo.sh status`: two service-b pods.
 5. After the demo, revert the change the same way (PR), not with `kubectl`.
 
