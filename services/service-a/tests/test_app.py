@@ -2,46 +2,54 @@ import json
 import re
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app import SERVICE_NAME, create_app
 
 
 @pytest.fixture
 def client():
-    return create_app({"TESTING": True}).test_client()
+    # raise_server_exceptions=False: unhandled errors become JSON 500, like in production.
+    return TestClient(create_app(), raise_server_exceptions=False)
 
 
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.get_json() == {"status": "ok", "service": SERVICE_NAME}
+    assert resp.json() == {"status": "ok", "service": SERVICE_NAME}
 
 
 def test_hello_identifies_service(client):
-    body = client.get("/hello").get_json()
+    body = client.get("/hello").json()
     assert body["service"] == "service-a"
     assert body["message"] == "hello"
     assert body["name"] is None
 
 
 def test_hello_passes_query_parameter(client):
-    assert client.get("/hello?name=Ann").get_json()["name"] == "Ann"
+    assert client.get("/hello?name=Ann").json()["name"] == "Ann"
 
 
 def test_hello_truncates_long_name(client):
-    assert len(client.get("/hello?name=" + "x" * 500).get_json()["name"]) == 50
+    assert len(client.get("/hello?name=" + "x" * 500).json()["name"]) == 50
+
+
+def test_head_request_is_allowed(client):
+    resp = client.head("/hello")
+    assert resp.status_code == 200
+    assert resp.content == b""
 
 
 def test_request_id_generated_when_missing(client):
     resp = client.get("/hello")
     assert re.fullmatch(r"[0-9a-f]{32}", resp.headers["X-Request-ID"])
-    assert resp.get_json()["request_id"] == resp.headers["X-Request-ID"]
+    assert resp.json()["request_id"] == resp.headers["X-Request-ID"]
 
 
 def test_valid_request_id_is_preserved(client):
     resp = client.get("/hello", headers={"X-Request-ID": "abc-123.X_y"})
     assert resp.headers["X-Request-ID"] == "abc-123.X_y"
-    assert resp.get_json()["request_id"] == "abc-123.X_y"
+    assert resp.json()["request_id"] == "abc-123.X_y"
 
 
 @pytest.mark.parametrize("bad_id", ["a" * 65, "has space", "semi;colon", "new\tline"])
@@ -54,16 +62,46 @@ def test_invalid_request_id_is_replaced(client, bad_id):
 def test_unknown_route_is_json_404(client):
     resp = client.get("/does-not-exist")
     assert resp.status_code == 404
-    body = resp.get_json()
-    assert body["error"] == "Not Found"
-    assert "Traceback" not in resp.get_data(as_text=True)
-    assert resp.headers["X-Request-ID"]
+    body = resp.json()
+    assert body == {"error": "Not Found", "status": 404, "request_id": resp.headers["X-Request-ID"]}
+    assert "Traceback" not in resp.text
 
 
 def test_wrong_method_is_json_405(client):
     resp = client.post("/hello")
     assert resp.status_code == 405
-    assert resp.get_json()["status"] == 405
+    assert resp.json()["error"] == "Method Not Allowed"
+    assert resp.json()["status"] == 405
+    assert "GET" in resp.headers["Allow"]
+
+
+def test_body_over_limit_is_json_413():
+    client = TestClient(create_app(max_body_bytes=10))
+    resp = client.post("/hello", content=b"x" * 11)
+    assert resp.status_code == 413
+    assert resp.json()["error"] == "Request Entity Too Large"
+    assert resp.json()["status"] == 413
+
+
+def test_unhandled_error_is_json_500_without_details(client):
+    app = client.app
+
+    @app.get("/boom")
+    async def boom():
+        raise RuntimeError("secret internal detail")
+
+    resp = client.get("/boom")
+    assert resp.status_code == 500
+    assert resp.json() == {"error": "Internal Server Error", "status": 500, "request_id": resp.headers["X-Request-ID"]}
+    assert "secret internal detail" not in resp.text
+
+
+def test_openapi_and_docs_are_available(client):
+    assert client.get("/openapi.json").json()["info"]["title"] == SERVICE_NAME
+    docs = client.get("/docs")
+    assert docs.status_code == 200
+    assert "openapi.json" in docs.text
+    assert "'/openapi.json'" not in docs.text  # relative link, works behind the gateway prefix
 
 
 def test_log_has_request_id_and_no_query_string(client, caplog):

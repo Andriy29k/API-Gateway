@@ -44,6 +44,7 @@ Benefits:
 Costs and risks:
 - Each service and its unit tests are rewritten (Flask test client → FastAPI `TestClient`, which needs `httpx`).
 - New dependencies: `fastapi`, `uvicorn`, `httpx` (tests only). Dockerfile `CMD` changes from gunicorn to uvicorn.
+  Update (T-027): Starlette 1.x uses `httpx2` for its `TestClient`, so the tests use `httpx2` instead of `httpx`.
 - FastAPI returns validation errors as `422` with its own body format by default. Custom exception handlers are needed to keep the current error format.
 - Shared code (request ID, logging, errors) stays duplicated per service, because each service is a separate Docker build context. Revisit only if the duplication becomes a real problem.
 
