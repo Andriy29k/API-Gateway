@@ -1,0 +1,31 @@
+# UI: https://argocd.api-gateway.pp.ua (TLS ends at Traefik, so the server runs without its own TLS).
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: argo-cd
+  namespace: kube-system
+spec:
+  repo: https://argoproj.github.io/argo-helm
+  chart: argo-cd
+  version: 10.20.0
+  targetNamespace: argocd
+  createNamespace: true
+  valuesContent: |-
+    fullnameOverride: argocd
+    global:
+      domain: argocd.api-gateway.pp.ua
+    configs:
+      params:
+        server.insecure: true
+    server:
+      ingress:
+        enabled: true
+        ingressClassName: traefik
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+        tls: true
+    # Not needed: no SSO and no notifications.
+    dex:
+      enabled: false
+    notifications:
+      enabled: false
