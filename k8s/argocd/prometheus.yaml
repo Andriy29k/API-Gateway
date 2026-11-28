@@ -1,0 +1,51 @@
+# Prometheus (community chart) in the monitoring namespace, managed by Argo CD (T-022).
+# Collects: kubelet/cAdvisor (CPU, RAM per container), kube-state-metrics (restarts, CrashLoopBackOff),
+# node-exporter (VM), and every pod with prometheus.io/scrape annotations (Traefik, NGINX exporter).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus
+    targetRevision: 31.0.0
+    helm:
+      releaseName: prometheus
+      valuesObject:
+        alertmanager:
+          enabled: false
+        prometheus-pushgateway:
+          enabled: false
+        kube-state-metrics:
+          enabled: true
+        prometheus-node-exporter:
+          enabled: true
+        scrapeConfigs:
+          prometheus-pushgateway:
+            enabled: false
+        server:
+          retention: 7d
+          retentionSize: 4GB
+          persistentVolume:
+            enabled: true
+            size: 5Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

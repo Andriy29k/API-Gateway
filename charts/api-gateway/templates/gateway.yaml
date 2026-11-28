@@ -17,6 +17,11 @@ spec:
       annotations:
         # Restart the gateway when its NGINX config changes.
         checksum/config: {{ include (print $.Template.BasePath "/gateway-configmap.yaml") . | sha256sum }}
+        {{- if .Values.gateway.metrics.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9113"
+        prometheus.io/path: /metrics
+        {{- end }}
     spec:
       containers:
         - name: nginx
@@ -46,6 +51,23 @@ spec:
             - name: config
               mountPath: /etc/nginx/conf.d/default.conf
               subPath: default.conf
+        {{- if .Values.gateway.metrics.enabled }}
+        - name: nginx-exporter
+          image: {{ .Values.gateway.metrics.image }}
+          args:
+            - --nginx.scrape-uri=http://127.0.0.1:8081/stub_status
+          ports:
+            - name: metrics
+              containerPort: 9113
+          resources:
+            {{- toYaml .Values.gateway.metrics.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+        {{- end }}
       volumes:
         - name: config
           configMap:
