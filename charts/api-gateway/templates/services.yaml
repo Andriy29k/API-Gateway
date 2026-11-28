@@ -47,7 +47,7 @@ spec:
             capabilities:
               drop: [ALL]
           volumeMounts:
-            # Writable /tmp: gunicorn (Flask services) keeps its worker heartbeat files there.
+            # Writable /tmp for Python temporary files (the root filesystem is read-only).
             - name: tmp
               mountPath: /tmp
       volumes:
