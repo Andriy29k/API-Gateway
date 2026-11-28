@@ -70,7 +70,7 @@ flowchart LR
 | Layer | Technology |
 |---|---|
 | Gateway | NGINX 1.28 (`nginx:1.28-alpine`) |
-| Services | Python 3.12: service-a on FastAPI + uvicorn, service-b … d on Flask + gunicorn (migration to FastAPI in progress, [ADR](docs/decisions.md)) |
+| Services | Python 3.12: service-a and service-b on FastAPI + uvicorn, service-c and service-d on Flask + gunicorn (migration to FastAPI in progress, [ADR](docs/decisions.md)) |
 | Local runtime | Docker Compose |
 | Tests | pytest (unit + smoke), bash smoke test, k6 |
 | CI | GitHub Actions |
