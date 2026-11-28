@@ -73,6 +73,15 @@ The gateway, the smoke tests and the Compose/Dockerfile health checks depend on 
 
 Each migration task is done when the service's unit tests pass and the CI smoke tests are green without changes to `tests/smoke/`.
 
+### Outcome (T-027 – T-030)
+
+All four services run on FastAPI + uvicorn; `tests/smoke/` was not changed. Differences from the Flask versions:
+
+- The `detail` text of `400` responses is Pydantic's message (e.g. `query.limit: Input should be greater than or equal to 1`); status and body format are unchanged.
+- `OPTIONS` returns `405` (Flask answered it automatically). Nothing uses it (no CORS).
+- Integer query parameters accept a few more spellings (`500.0`, `+500`, `0500` for `/error?status=`); the allowed range is unchanged.
+- service-d `/slow` uses `asyncio.sleep`, so slow requests no longer take up worker threads (gunicorn allowed 2 workers × 4 threads).
+
 ---
 
 # Run a self-managed single-node k3s cluster on an Azure VM, managed with Terraform
