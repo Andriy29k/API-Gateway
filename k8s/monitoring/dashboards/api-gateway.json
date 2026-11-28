@@ -706,6 +706,63 @@
           }
         }
       ]
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Firing and pending alerts",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Prometheus alerting rules (k8s/argocd/prometheus.yaml, T-041). Empty table = no alerts. Details: Grafana \u2192 Alerting \u2192 Alert rules.",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "ALERTS",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "refId": "A",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "Value": true
+            },
+            "indexByName": {
+              "alertname": 0,
+              "alertstate": 1,
+              "severity": 2,
+              "namespace": 3,
+              "pod": 4,
+              "container": 5
+            }
+          }
+        }
+      ]
     }
   ]
 }

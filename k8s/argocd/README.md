@@ -12,7 +12,7 @@ merge to main ──> Argo CD (polls Git every ~3 min) ──> renders charts/ap
 |---|---|
 | `../bootstrap/argocd.yaml` | Installs Argo CD `10.20.0` (app `v3.6.3`) with the k3s Helm controller; UI on `argocd.api-gateway.pp.ua` behind Traefik + Let's Encrypt; Dex and notifications disabled |
 | `api-gateway.yaml` | `Application` for `charts/api-gateway` (branch `main`, namespace `api-gateway`), automated sync with `prune` and `selfHeal` |
-| `prometheus.yaml` | `Application` for the community `prometheus` chart `31.0.0` in namespace `monitoring` (T-022), see [Monitoring](#monitoring-prometheus) |
+| `prometheus.yaml` | `Application` for the community `prometheus` chart `31.0.0` in namespace `monitoring` (T-022), with alerting rules (T-041), see [Monitoring](#monitoring-prometheus) |
 | `grafana.yaml` | `Application` for the community `grafana` chart `14.6.1` (Grafana 13.3.2) + dashboards from `k8s/monitoring/dashboards` (T-023), see [Monitoring: Grafana](#monitoring-grafana) |
 
 The repository is public, so Argo CD needs no Git credentials.
@@ -100,6 +100,37 @@ IP=$(ssh "$VM" sudo k3s kubectl -n monitoring get svc prometheus-server -o jsonp
 ssh -N -L 9090:$IP:80 "$VM"        # then open http://localhost:9090 (Status → Targets)
 ```
 
+## Monitoring: alerting rules
+
+Prometheus alerting rules (T-041) are in `prometheus.yaml` → `serverFiles."alerting_rules.yml"`. There is no Alertmanager,
+so alerts are not sent anywhere: they are visible in the Prometheus UI (**Alerts**), in Grafana (**Alerting → Alert rules**,
+data source-managed) and in the *Firing and pending alerts* table on the dashboard.
+
+| Alert | Condition | For | Severity |
+|---|---|---|---|
+| `ContainerCrashLooping` | more than 2 restarts in 15 min and container not ready | 2m | critical |
+| `PodNotReady` | running pod not ready | 5m | warning |
+| `TargetDown` | scrape target `up == 0` | 5m | warning |
+| `NodeMemoryHigh` | node memory used > 90 % | 10m | warning |
+| `NodeDiskAlmostFull` | root disk used > 85 % | 10m | warning |
+| `GatewayHigh5xxRatio` | more than 5 % of gateway responses are 5xx | 5m | critical |
+| `GatewayRateLimiting` | more than 1 response/s with 429 | 2m | info |
+| `GatewayHighLatency` | gateway p95 > 1 s | 10m | warning |
+
+Check the rules before a change (from the running Prometheus pod; the rules file is rendered by `helm template`):
+
+```bash
+k -n monitoring exec -i deploy/prometheus-server -c prometheus-server -- \
+  sh -c 'cat > /data/rules-check.yml && promtool check rules /data/rules-check.yml; rm -f /data/rules-check.yml' < alerting_rules.yml
+```
+
+Tested on 2026-11-28: a crashing test pod fired `ContainerCrashLooping` and `PodNotReady`; k6 at 20 req/s for 4 minutes
+fired `GatewayRateLimiting` (about 15 × 429/s) and moved `GatewayHighLatency` to `pending` (p95 about 1.02 s, below the 10 min `for`).
+
+A closed-loop client (each request waits for the previous ones) does not trigger 429 at all: the gateway delays the
+extra requests (`burst=10 delay=5`) and the client slows down to the limit by itself. Rate-limit tests need a fixed
+arrival rate (k6 `constant-arrival-rate`).
+
 ## Monitoring: Grafana
 
 `grafana.yaml` has two sources: the `grafana-community` chart (values in `valuesObject`) and
@@ -128,6 +159,7 @@ Dashboard panels (namespace variable, default `api-gateway`):
 | Gateway requests/s, p95, response time p50/p95/p99 | Traefik histogram (`api-gateway-gateway` service) |
 | Requests by status code, 429 responses/s | Traefik counters |
 | Container restarts (1h), Crash-looping containers table | kube-state-metrics |
+| Firing and pending alerts | `ALERTS` from the Prometheus alerting rules (T-041) |
 
 To change the dashboard: edit it in the UI, export JSON (Share → Export), replace `k8s/monitoring/dashboards/api-gateway.json`,
 merge into `main`. Changes made only in the UI are lost when the pod restarts.
