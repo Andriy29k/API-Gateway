@@ -13,6 +13,7 @@ merge to main ──> Argo CD (polls Git every ~3 min) ──> renders charts/ap
 | `../bootstrap/argocd.yaml` | Installs Argo CD `10.20.0` (app `v3.6.3`) with the k3s Helm controller; UI on `argocd.api-gateway.pp.ua` behind Traefik + Let's Encrypt; Dex and notifications disabled |
 | `api-gateway.yaml` | `Application` for `charts/api-gateway` (branch `main`, namespace `api-gateway`), automated sync with `prune` and `selfHeal` |
 | `prometheus.yaml` | `Application` for the community `prometheus` chart `31.0.0` in namespace `monitoring` (T-022), see [Monitoring](#monitoring-prometheus) |
+| `grafana.yaml` | `Application` for the community `grafana` chart `14.6.1` (Grafana 13.3.2) + dashboards from `k8s/monitoring/dashboards` (T-023), see [Monitoring: Grafana](#monitoring-grafana) |
 
 The repository is public, so Argo CD needs no Git credentials.
 
@@ -99,6 +100,38 @@ IP=$(ssh "$VM" sudo k3s kubectl -n monitoring get svc prometheus-server -o jsonp
 ssh -N -L 9090:$IP:80 "$VM"        # then open http://localhost:9090 (Status → Targets)
 ```
 
+## Monitoring: Grafana
+
+`grafana.yaml` has two sources: the `grafana-community` chart (values in `valuesObject`) and
+`k8s/monitoring/dashboards` from this repository (branch `main`). Kustomize packs the dashboard JSON into the
+ConfigMap `grafana-dashboards-api-gateway` with the label `grafana_dashboard`, and the Grafana sidecar loads it.
+The Prometheus datasource (uid `prometheus`) is provisioned from the values. No persistent volume: everything comes from Git.
+
+UI: `https://grafana.api-gateway.pp.ua` (Let's Encrypt), dashboard **API Gateway overview**. Anonymous access and sign-up are off.
+
+The admin password is not in Git. Create the Secret once, before the first sync:
+
+```bash
+k -n monitoring create secret generic grafana-admin \
+  --from-literal=admin-user=admin --from-literal=admin-password="$(openssl rand -base64 24)"
+k -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo   # show it
+```
+
+To change the password, update the Secret and restart Grafana: `k -n monitoring rollout restart deploy/grafana`.
+
+Dashboard panels (namespace variable, default `api-gateway`):
+
+| Panel | Query source |
+|---|---|
+| Crash-looping containers, Restarts (1h), Pods not ready | kube-state-metrics |
+| CPU by pod, Memory by pod | cAdvisor |
+| Gateway requests/s, p95, response time p50/p95/p99 | Traefik histogram (`api-gateway-gateway` service) |
+| Requests by status code, 429 responses/s | Traefik counters |
+| Container restarts (1h), Crash-looping containers table | kube-state-metrics |
+
+To change the dashboard: edit it in the UI, export JSON (Share → Export), replace `k8s/monitoring/dashboards/api-gateway.json`,
+merge into `main`. Changes made only in the UI are lost when the pod restarts.
+
 ## Known limitations
 
 - Argo CD polls Git (no webhook), so a deploy takes up to about 3 minutes.
@@ -107,3 +140,7 @@ ssh -N -L 9090:$IP:80 "$VM"        # then open http://localhost:9090 (Status →
 - The `argocd` DNS record is not in `terraform output dns_records`: adding it to the `subdomains` variable would
   change the VM cloud-init and recreate the VM.
 - New images are rolled out only when `image.tag` in `values.yaml` changes; today by hand, automated in T-021.
+- Response time comes from the default Traefik histogram buckets (0.1 s, 0.3 s, 1.2 s, 5 s), so percentiles are rough estimates.
+- The first request with a new status code (e.g. the first 429 after a Traefik restart) creates a new counter series;
+  `rate()`/`increase()` cannot count that first value, so it is missing from the graphs.
+- Grafana is public and protected by the admin password only.

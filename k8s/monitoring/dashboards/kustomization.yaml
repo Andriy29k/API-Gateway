@@ -1,0 +1,13 @@
+# Packs the dashboard JSON files into a ConfigMap. The Grafana sidecar loads every
+# ConfigMap with the label grafana_dashboard (see k8s/argocd/grafana.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+configMapGenerator:
+  - name: grafana-dashboards-api-gateway
+    files:
+      - api-gateway.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"
