@@ -27,8 +27,8 @@ The NGINX config exists twice (`gateway/` for Compose, the ConfigMap here). Chan
 | Key | Default | Description |
 |---|---|---|
 | `image.repository` | `ghcr.io/andriy29k` | Registry and owner of the backend images |
-| `image.tag` | `latest` | Image tag for all backends (`sha-<short>` after T-021) |
-| `image.pullPolicy` | `Always` | Re-pull moving tags on every rollout |
+| `image.tag` | `sha-17f2756` | Image tag for all backends (pinned `sha-<short>` from GHCR; updated automatically in T-021) |
+| `image.pullPolicy` | `IfNotPresent` | Pinned tags never change, so no re-pull is needed |
 | `services.<name>.enabled` | `true` (`false` for service-d) | Deploy the service and its gateway route |
 | `services.<name>.replicas` | `1` | Pods per backend |
 | `services.<name>.limitReq` | `zone=api_limit burst=10 delay=5` | NGINX `limit_req` for the route (`faults_limit` for service-d) |
@@ -45,33 +45,38 @@ The NGINX config exists twice (`gateway/` for Compose, the ConfigMap here). Chan
 
 Requirements: images in GHCR with public visibility, cert-manager and ClusterIssuers from `k8s/bootstrap/`, DNS for `ingress.host`.
 
-```bash
-export KUBECONFIG=~/.kube/api-gateway.yaml
+On the k3s cluster the chart is deployed by **Argo CD** from `main` (`k8s/argocd/`, T-020).
+Do not run `helm install/upgrade` against the cluster: Argo CD owns the resources and self-heal reverts manual changes.
+To deploy a change, merge it into `main`.
 
+Local checks:
+
+```bash
 helm lint charts/api-gateway --strict
 helm template api-gateway charts/api-gateway -n api-gateway     # render locally
+```
 
-helm upgrade --install api-gateway charts/api-gateway -n api-gateway --create-namespace --reset-values
-kubectl -n api-gateway get pods,ingress,certificate
+On the cluster:
 
+```bash
+k() { ssh azureuser@<public-ip> sudo k3s kubectl "$@"; }
+k -n argocd get application api-gateway      # Synced / Healthy
+k -n api-gateway get pods,ingress,certificate
 curl https://api.api-gateway.pp.ua/health
 curl https://api.api-gateway.pp.ua/api/service-a/hello
 ```
 
-Smoke tests against the cluster (they need service-d):
+Smoke tests against the cluster need service-d. Enable it temporarily with a parameter on the Argo CD Application
+(not stored in Git), run the tests, then remove the parameter; Argo CD prunes service-d again:
 
 ```bash
-helm upgrade --install api-gateway charts/api-gateway -n api-gateway --set services.service-d.enabled=true
+k -n argocd patch application api-gateway --type merge \
+  -p '{"spec":{"source":{"helm":{"parameters":[{"name":"services.service-d.enabled","value":"true"}]}}}}'
 GATEWAY_URL=https://api.api-gateway.pp.ua python -m pytest tests/smoke -v -rx
-helm upgrade --install api-gateway charts/api-gateway -n api-gateway --reset-values   # disable service-d again
+k -n argocd patch application api-gateway --type merge -p '{"spec":{"source":{"helm":{"parameters":null}}}}'
 ```
 
-`--reset-values` matters: without any `--set`/`-f`, `helm upgrade` reuses the values of the previous release,
-so service-d would stay enabled.
-
 Expected result: all tests pass, `test_body_over_gateway_limit_returns_gateway_json_413` is `xfail` (see below).
-
-Remove: `helm uninstall api-gateway -n api-gateway`.
 
 ## Known limitations
 
@@ -81,5 +86,5 @@ Remove: `helm uninstall api-gateway -n api-gateway`.
 - Traefik must run with `externalTrafficPolicy: Local` (`k8s/bootstrap/traefik-config.yaml`), otherwise all clients share one rate limit.
 
 - The gateway runs the official `nginx` image, whose master process runs as root (same as Compose).
-- `image.tag: latest` with `pullPolicy: Always` is not reproducible; T-021 pins `sha-<short>` tags.
+- The image tag is updated by hand until T-021 automates it.
 - One tag for all backends.
