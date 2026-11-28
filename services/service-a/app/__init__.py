@@ -6,12 +6,14 @@ import re
 import sys
 import time
 import uuid
+from contextlib import asynccontextmanager
 from http import HTTPStatus
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import JSONResponse
+from prometheus_client import CollectorRegistry, Counter, Histogram, start_http_server
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 SERVICE_NAME = "service-a"
@@ -20,6 +22,8 @@ SERVICE_NAME = "service-a"
 # Anything else is replaced, so a client cannot inject odd data into logs.
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _MAX_LOGGED_PATH = 200
+# Other methods are counted as "OTHER", so a client cannot create new metric series.
+_KNOWN_METHODS = {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 
 
 def _get_logger():
@@ -40,14 +44,43 @@ def _error(status, request_id, detail=None):
     return JSONResponse(body, status_code=status)
 
 
-def create_app(max_body_bytes=None):
+def _create_metrics(registry):
+    """Request metrics. "route" is the route template (e.g. /items/{item_id:int}), never the raw path,
+    so the number of time series stays small."""
+    requests = Counter(
+        "http_requests_total", "HTTP requests handled by the service", ["method", "route", "status"], registry=registry
+    )
+    duration = Histogram(
+        "http_request_duration_seconds", "Time to handle a request in the service", ["method", "route"], registry=registry
+    )
+    return requests, duration
+
+
+def create_app(max_body_bytes=None, metrics_port=None):
     if max_body_bytes is None:
         max_body_bytes = int(os.environ.get("MAX_BODY_BYTES", "65536"))
+    if metrics_port is None:
+        metrics_port = os.environ.get("METRICS_PORT", "")
     logger = _get_logger()
+    registry = CollectorRegistry()
+    requests_total, request_duration = _create_metrics(registry)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        # Metrics are served on their own port (not 8000), so the gateway never exposes /metrics.
+        # Needs one uvicorn worker per container: a second worker could not bind the same port.
+        server = None
+        if metrics_port:
+            server, _ = start_http_server(int(metrics_port), registry=registry)
+        yield
+        if server:
+            server.shutdown()
+            server.server_close()
 
     # docs_url=None: /docs is defined below with a relative link to openapi.json,
     # so Swagger UI also works through the gateway (/api/service-a/docs).
-    app = FastAPI(title=SERVICE_NAME, docs_url=None, redoc_url=None)
+    app = FastAPI(title=SERVICE_NAME, docs_url=None, redoc_url=None, lifespan=lifespan)
+    app.state.metrics_registry = registry
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -68,6 +101,11 @@ def create_app(max_body_bytes=None):
                 response = _error(500, request_id)
 
         response.headers["X-Request-ID"] = request_id
+        duration = time.perf_counter() - start
+        route = getattr(request.scope.get("route"), "path", "unmatched")
+        method = request.method if request.method in _KNOWN_METHODS else "OTHER"
+        requests_total.labels(method, route, str(response.status_code)).inc()
+        request_duration.labels(method, route).observe(duration)
         # Log metadata only: never query string, headers, cookies or body.
         logger.info(
             json.dumps(
@@ -78,7 +116,7 @@ def create_app(max_body_bytes=None):
                     "method": request.method,
                     "path": request.url.path[:_MAX_LOGGED_PATH],
                     "status": response.status_code,
-                    "duration_ms": round((time.perf_counter() - start) * 1000, 2),
+                    "duration_ms": round(duration * 1000, 2),
                 }
             )
         )

@@ -13,6 +13,11 @@ spec:
     path: charts/api-gateway
     helm:
       releaseName: api-gateway
+      # Every commit on main deploys the images built from that commit (images.yml tags them sha-<7 chars>).
+      # Argo CD replaces the variable when it renders the chart; it works only in parameters, not in values.
+      parameters:
+        - name: image.tag
+          value: sha-$ARGOCD_APP_REVISION_SHORT
   destination:
     server: https://kubernetes.default.svc
     namespace: api-gateway

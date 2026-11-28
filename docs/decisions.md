@@ -125,3 +125,40 @@ Costs and risks:
 - Local state is a single copy and contains the k3s join token. Option for later: a remote backend in the existing storage account.
 - SSH and the Kubernetes API are open only to one admin IP; when it changes, `admin_source_cidr` must be updated and applied.
 - Changing cloud-init inputs (`k3s_version`, `domain_name`, `subdomains`) recreates the VM.
+
+---
+
+# Deploy the image of every commit on main by setting the tag in the Argo CD Application
+
+### Context
+
+The Images workflow builds all service images on every push to `main` and tags them `sha-<7 chars>`. Until T-021 the
+chart used a fixed `image.tag` in `values.yaml`. Every deployment of new code needed a second change (task branch
+with the new tag, then `dev` → `main`), and the tag was always one commit behind the code.
+
+### Options
+
+1. **Bump the tag in Git from a workflow** after the images are pushed. Needs write access to `main` for the workflow
+   (branch protection), and creates commits on `main` that `dev` does not have.
+2. **Argo CD Image Updater.** An extra component that watches the registry and writes the tag back; more moving parts.
+3. **Set `image.tag=sha-$ARGOCD_APP_REVISION_SHORT` in the Argo CD Application.** Argo CD puts the short SHA of the
+   commit it deploys into the parameter, which is the same tag the Images workflow creates.
+
+### Decision
+
+Option 3. The Application in `k8s/argocd/api-gateway.yaml` has the parameter; `values.yaml` keeps a default tag for
+`helm template` and manual installs. Checked on k3s (Argo CD v3.6.3): the parameter resolves to `sha-<commit>`;
+the variable is not replaced in `valuesObject`, only in `parameters`.
+
+### Consequences
+
+Benefits:
+- One merge into `main` deploys exactly the code of that commit; no tag commits; a revert deploys the reverted code.
+
+Costs and risks:
+- If Argo CD syncs before the images are pushed (~1–2 min), the new pods wait in `ImagePullBackOff`; the old pods keep
+  serving. If the Images workflow fails, the rollout stays stuck until the next good commit (alert `PodNotReady`).
+- Every commit on `main`, also docs-only, restarts the backends with a new tag.
+- The running version is visible in Argo CD (synced revision) and in the pod image, not in `values.yaml`.
+- Temporary Application parameters must be appended (JSON patch), not replace the list, and are removed by re-applying
+  the Application from Git.

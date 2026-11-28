@@ -70,7 +70,7 @@ Do not change resources in `api-gateway` with `kubectl`/`helm`: self-heal revert
 | kubelet / cAdvisor (`kubernetes-nodes-cadvisor`) | CPU and RAM per container: `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes` |
 | `kube-state-metrics` | Pod restarts and state: `kube_pod_container_status_restarts_total`, `kube_pod_container_status_ready` |
 | `node-exporter` | VM CPU, RAM, disk |
-| Pods with `prometheus.io/scrape` (job `kubernetes-pods`) | Traefik: requests by status code and response time (`traefik_service_requests_total`, `traefik_service_request_duration_seconds_bucket`); NGINX exporter sidecar of the gateway: `nginx_up`, connections, requests |
+| Pods with `prometheus.io/scrape` (job `kubernetes-pods`) | Traefik: requests by status code and response time (`traefik_service_requests_total`, `traefik_service_request_duration_seconds_bucket`); NGINX exporter sidecar of the gateway: `nginx_up`, connections, requests; backends (port 9100): `http_requests_total`, `http_request_duration_seconds_bucket` by `method`, `route`, `status`, service in the label `app_kubernetes_io_name` |
 
 Useful queries:
 
@@ -159,6 +159,7 @@ Dashboard panels (namespace variable, default `api-gateway`):
 | Gateway requests/s, p95, response time p50/p95/p99 | Traefik histogram (`api-gateway-gateway` service) |
 | Requests by status code, 429 responses/s | Traefik counters |
 | Container restarts (1h), Crash-looping containers table | kube-state-metrics |
+| Service requests/s by status, Service p95 by route | Backend metrics (`http_requests_total`, `http_request_duration_seconds`), `/health` excluded |
 | Firing and pending alerts | `ALERTS` from the Prometheus alerting rules (T-041) |
 
 To change the dashboard: edit it in the UI, export JSON (Share → Export), replace `k8s/monitoring/dashboards/api-gateway.json`,
@@ -171,7 +172,12 @@ merge into `main`. Changes made only in the UI are lost when the pod restarts.
 - The UI is reachable from the Internet; protection is the admin password only.
 - The `argocd` DNS record is not in `terraform output dns_records`: adding it to the `subdomains` variable would
   change the VM cloud-init and recreate the VM.
-- New images are rolled out only when `image.tag` in `values.yaml` changes; today by hand, automated in T-021.
+- Image tag (T-021): the Application sets `image.tag=sha-$ARGOCD_APP_REVISION_SHORT`, so every commit on `main` deploys
+  the images that `images.yml` built from it. If Argo CD syncs before the images are pushed (~1–2 min), the new pods wait
+  in `ImagePullBackOff` and the old pods keep serving; the rollout finishes when the images exist. If `images.yml` fails,
+  the rollout stays stuck (alert `PodNotReady` after 5 min). Every commit on `main` (also docs-only) restarts the backends.
+- Temporary parameters (service-d for tests): append with a JSON patch and restore with `kubectl apply -f k8s/argocd/api-gateway.yaml`,
+  see [charts/api-gateway/README.md](../../charts/api-gateway/README.md).
 - Response time comes from the default Traefik histogram buckets (0.1 s, 0.3 s, 1.2 s, 5 s), so percentiles are rough estimates.
 - The first request with a new status code (e.g. the first 429 after a Traefik restart) creates a new counter series;
   `rate()`/`increase()` cannot count that first value, so it is missing from the graphs.
